@@ -14,8 +14,12 @@ import { homedir } from 'node:os'
 import { join, posix } from 'node:path'
 import { Client } from 'ssh2'
 import type { ClientChannel, ConnectConfig, SFTPWrapper } from 'ssh2'
-import { wrapCwd, defaultIdentity } from './runtime.ts'
+import { wrapCwd, defaultIdentity, knownHostsFor, quoteShellArg } from './runtime.ts'
 import type { ExecOutcome, JumpConfig } from './runtime.ts'
+import { sshDebug } from './debug.ts'
+import { dockerClient, dockerCommand, hostExec, validateDockerTarget } from './docker.ts'
+import type { DockerTarget } from './docker.ts'
+import { dockerFiles } from './docker-files.ts'
 
 /** One hop after auth and defaults are resolved. */
 interface ResolvedHop {
@@ -33,6 +37,8 @@ interface ResolvedHop {
 
 /** A registry entry as persisted in the state file. */
 export interface SshConnectionSpec {
+  /** Optional container execution world, reached through this SSH host. */
+  docker?: DockerTarget
   /** Stable registry id (`c1`, `c2`, …). */
   id: string
   /** Operator-facing display name. */
@@ -61,6 +67,10 @@ export interface SshConnectionSpec {
   keepaliveInterval?: number
   /** TCP keepalive retry budget before the connection is considered dead. */
   keepaliveCountMax?: number
+  /** When true, reject a host key that does not match an entry in {@link knownHosts}. */
+  strictHostKeyChecking?: boolean
+  /** Trusted host keys as `SHA256:<base64>` fingerprints or raw base64 public keys. */
+  knownHosts?: string[]
 }
 
 /** Read an identity value that is a local path to a PEM file (`~` expanded). */
@@ -135,7 +145,7 @@ function hostVerifierFor(knownHosts: readonly string[]): (key: Buffer) => boolea
     const raw = key.toString('base64')
     return knownHosts.some((entry) => {
       const token = entry.trim().split(/\s+/).at(-1) ?? ''
-      return token === fingerprint || token === raw
+      return token.replace(/=+$/, '') === fingerprint.replace(/=+$/, '') || token === raw
     })
   }
 }
@@ -158,16 +168,18 @@ export class SshConnection {
 
   /** The transport's default remote working directory. */
   get cwd(): string {
-    return this.spec.cwd ?? '/root'
+    return this.spec.cwd ?? (this.spec.docker === undefined ? '/root' : '/')
   }
 
   /** Build the hop chain from a registry spec (auth defaults fall down the chain). */
   constructor(readonly spec: SshConnectionSpec) {
+    if (spec.docker !== undefined) validateDockerTarget(spec.docker)
     this.id = spec.id
     this.label = spec.label
-    this.endpoint = `${spec.username}@${spec.host}`
-    this.strict = false
-    this.knownHosts = []
+    this.endpoint = `${spec.username}@${spec.host}${spec.docker === undefined ? '' : ` [docker:${spec.docker.container}]`}`
+    this.strict = spec.strictHostKeyChecking ?? true
+    const configuredHosts = spec.knownHosts ?? []
+    this.knownHosts = configuredHosts.length > 0 ? configuredHosts : (this.strict ? knownHostsFor(spec.host, spec.port) : [])
     // Tailscale/DERP-relayed paths routinely exceed 20s to ready (observed
     // 4–20s variance); OpenSSH has no client-side handshake cap at all.
     const readyTimeout = spec.readyTimeout ?? 45_000
@@ -236,7 +248,7 @@ export class SshConnection {
   }
 
   /** The authenticated target client after the jump chain succeeds. */
-  async getClient(signal?: AbortSignal): Promise<Client> {
+  private async getHostClient(signal?: AbortSignal): Promise<Client> {
     signal?.throwIfAborted()
     if (this.disposed) throw new Error(`dsh-ssh: connection "${this.label}" is disposed`)
     this.ready ??= this.open()
@@ -244,6 +256,9 @@ export class SshConnection {
     try {
       client = await this.ready
     } catch (error) {
+      // A failed dial must not be cached: the next call retries the same host
+      // and, on failure, fails loudly instead of falling back anywhere.
+      if (this.ready !== undefined) this.ready = undefined
       throw rewrapConnectError(error, this.label, this.endpoint)
     }
     signal?.throwIfAborted()
@@ -251,9 +266,39 @@ export class SshConnection {
     return client
   }
 
+  private dockerPreparation: Promise<void> | undefined
+
+  /** Resolve the name once, then keep the full ID across reconnects and saves. */
+  async prepareDocker(signal?: AbortSignal): Promise<void> {
+    const target = this.spec.docker
+    if (target === undefined) return
+    const host = await this.getHostClient(signal)
+    const inspect = await hostExec(host, `docker inspect --type container -- ${quoteShellArg(target.container)}`, signal)
+    if (inspect.exitCode !== 0) throw new Error(`dsh-ssh: Docker target unavailable: ${inspect.stderr.trim()}`)
+    const value = JSON.parse(inspect.stdout)[0]
+    if (!value || !/^[a-f0-9]{64}$/.test(value.Id) || value.State?.Running !== true || value.State?.Paused === true) throw new Error('dsh-ssh: Docker target must be running and not paused')
+    target.container = value.Id
+    const check = await hostExec(host, dockerCommand(target, ['bash', '-c', 'set -e; for x in python3 realpath sha256sum base64 env find grep chmod ln rm; do command -v "$x" >/dev/null; done; realpath -mz -- / >/dev/null; printf x | base64 -w0 >/dev/null; find / -maxdepth 0 -printf ""; ln --version >/dev/null; python3 -c "import os,json,base64,subprocess,signal,fcntl,termios"']), signal)
+    if (check.exitCode !== 0) throw new Error(`dsh-ssh: container requires Bash, Python 3 and GNU file/search tools: ${check.stderr.trim()}`)
+    if (this.spec.cwd === undefined) this.spec.cwd = value.Config?.WorkingDir || '/'
+  }
+
+  async getClient(signal?: AbortSignal): Promise<Client> {
+    const host = await this.getHostClient(signal)
+    if (this.spec.docker === undefined) return host
+    this.dockerPreparation ??= this.prepareDocker(signal).catch(error => { this.dockerPreparation = undefined; throw error })
+    await this.dockerPreparation
+    signal?.throwIfAborted()
+    return dockerClient(host, this.spec.docker)
+  }
+
   /** The shared SFTP channel, opened lazily once per connection. */
   async getSftp(signal?: AbortSignal): Promise<SFTPWrapper> {
     if (this.disposed) throw new Error(`dsh-ssh: connection "${this.label}" is disposed`)
+    if (this.spec.docker !== undefined) {
+      await this.getClient(signal)
+      return dockerFiles(command => this.exec(command, signal === undefined ? undefined : { signal }))
+    }
     if (this.sftp !== undefined) return this.sftp
     this.sftpOpening ??= this.openSftp(signal)
     const sftp = await this.sftpOpening
@@ -271,6 +316,7 @@ export class SshConnection {
   /** Run one control-plane command with collected output. */
   async exec(command: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<ExecOutcome> {
     opts?.signal?.throwIfAborted()
+    sshDebug(`exec on ${this.endpoint}: ${command.length > 300 ? `${command.slice(0, 300)}…` : command}`)
     const client = await this.getClient(opts?.signal)
     const resolvedCwd = opts?.cwd !== undefined ? this.resolveRemoteCwd(opts.cwd) : undefined
       const text = resolvedCwd !== undefined ? wrapCwd(resolvedCwd, command) : command
@@ -344,8 +390,9 @@ export class SshConnection {
         const previous = clients[index - 1]
         const client = new Client()
         clients.push(client)
+        this.watchClient(client)
         const config = toConnectConfig(hop, undefined)
-        if (this.strict) config.hostVerifier = hostVerifierFor(this.knownHosts)
+        if (this.strict) config.hostVerifier = hostVerifierFor(index === this.hops.length - 1 ? this.knownHosts : knownHostsFor(hop.host, hop.port))
         if (previous === undefined) {
           await connectReady(client, config)
         } else {
@@ -361,5 +408,30 @@ export class SshConnection {
       }
       throw error
     }
+  }
+
+  /**
+   * Drop the cached client, SFTP channel and login environment when the
+   * transport dies, so the next operation redials the SAME host. A redial
+   * failure surfaces as an error; nothing here falls back to a local world.
+   * The persistent error listener also keeps a late ssh2 transport error from
+   * becoming an unhandled EventEmitter exception.
+   * @param client - one client of this chain.
+   */
+  private watchClient(client: Client): void {
+    const invalidate = (): void => {
+      if (this.disposed) return
+      if (this.clients.length > 0 && !this.clients.includes(client)) return
+      this.ready = undefined
+      this.remoteEnvironment = undefined
+      this.sftpOpening = undefined
+      const sftp = this.sftp
+      this.sftp = undefined
+      if (sftp !== undefined) {
+        try { sftp.end() } catch { /* already quiescent */ }
+      }
+    }
+    client.on('error', invalidate)
+    client.on('close', invalidate)
   }
 }

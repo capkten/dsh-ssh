@@ -3,6 +3,12 @@ node_modules
 .DS_Store
 lib
 
+# Isolated test dependencies (own package.json under tests/_deps)
+tests/_deps/node_modules
+
+# Local sandbox ACL repair records (one-off development artifact)
+.acl-recovery/
+
 # Qwen Code CI settings and logs
 .qwen/
 qwen-artifacts/

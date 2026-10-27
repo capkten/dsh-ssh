@@ -228,6 +228,7 @@ function asConnectionView(record: Record<string, unknown>): ConnectionView {
     port: typeof record.port === 'number' ? record.port : 22,
     username: String(record.username ?? ''),
     ...(typeof record.cwd === 'string' ? { cwd: record.cwd } : {}),
+    ...(isRecord(record.docker) && typeof record.docker.container === 'string' ? { docker: { container: record.docker.container, ...(typeof record.docker.user === 'string' ? { user: record.docker.user } : {}) } } : {}),
     auth: (record.auth === 'password' || record.auth === 'agent' ? record.auth : 'key') as ConnectionView['auth'],
     jumpHosts: Array.isArray(record.jumpHosts) ? record.jumpHosts.map(String) : [],
   }
@@ -648,6 +649,8 @@ export function SshWorkspaceFlow(props: FlowProps & FlowInjected) {
 
   /** A prefilled form for the connection whose browse just failed on auth. */
   const draftFromConnection = (connection: ConnectionView): ConnectionDraft => ({
+    ...(connection.docker === undefined ? {} : { docker: connection.docker }),
+    ...(connection.cwd === undefined ? {} : { cwd: connection.cwd }),
     label: connection.label,
     host: connection.host,
     port: String(connection.port),

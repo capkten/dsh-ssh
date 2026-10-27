@@ -13,6 +13,8 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SshConnection } from './connection.ts'
 import type { SshConnectionSpec } from './connection.ts'
+import { sshDebug } from './debug.ts'
+import type { DockerTarget } from './docker.ts'
 
 /** Registry plugin config. */
 export interface RegistryConfig {
@@ -31,6 +33,7 @@ interface SshConfigBlock {
 
 /** Client-facing view of one registered connection (no secrets). */
 export interface SshConnectionView {
+  docker?: DockerTarget
   id: string
   label: string
   host: string
@@ -76,6 +79,7 @@ export interface ResolvedSshConfig {
 
 /** Payload the channel accepts for a new connection. */
 export interface ConnectionInput {
+  docker?: DockerTarget
   label?: string
   host: string
   port?: number
@@ -86,11 +90,19 @@ export interface ConnectionInput {
   agent?: string
   jump?: ResolvedJump[]
   cwd?: string
+  /** When true, reject a host key absent from {@link knownHosts}. */
+  strictHostKeyChecking?: boolean
+  /** Trusted host-key fingerprints (`SHA256:…`) or raw base64 keys. */
+  knownHosts?: string[]
 }
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
     sshRegistry: SshRegistry
+  }
+  interface Events {
+    /** Emitted after the persisted connection list changed (add or remove). */
+    'ssh-registry/change'(): void
   }
 }
 
@@ -228,6 +240,22 @@ export class SshRegistry extends Service {
     super(ctx, 'sshRegistry')
     this.stateFile = config.stateFile ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'dsh-ssh-connections.json')
     this.load()
+    sshDebug(`registry state=${this.stateFile} connections=${this.specs.size}`)
+    // Live ssh2 sockets keep the event loop alive. Release every registry-owned
+    // connection on host shutdown so an ordinary process exit is not blocked
+    // by an idle remote workspace.
+    ctx.effect(() => async () => {
+      const live = [...this.live.values()]
+      this.live.clear()
+      for (const connection of live) {
+        try {
+          connection.dispose()
+        } catch (error) {
+          ctx.logger.warn(`dsh-ssh: failed to dispose connection "${connection.id}": ${String(error)}`)
+        }
+      }
+      await this.writeTail.catch(() => undefined)
+    }, 'ssh-registry teardown')
   }
 
   /** All registered connections as secret-free views, in insertion order. */
@@ -243,6 +271,7 @@ export class SshRegistry extends Service {
     if (connection === undefined) {
       connection = new SshConnection(spec)
       this.live.set(id, connection)
+      sshDebug(`connection "${id}" -> ${connection.endpoint} (cwd=${connection.cwd})`)
     }
     return connection
   }
@@ -257,8 +286,8 @@ export class SshRegistry extends Service {
   }
 
   /** Validate, resolve, persist, and register one new connection. */
-  add(input: ConnectionInput): { id: string; view: SshConnectionView } {
-    const label = (input.label ?? '').trim() || `${input.username ?? ''}@${input.host}`.replace(/^@/, '')
+  async add(input: ConnectionInput): Promise<{ id: string; view: SshConnectionView }> {
+    const label = (input.label ?? '').trim() || (`${input.username ?? ''}@${input.host}`.replace(/^@/, '') + (input.docker === undefined ? '' : ` / ${input.docker.container}`))
     const host = input.host.trim()
     const username = (input.username ?? '').trim()
     if (host === '') throw new Error('dsh-ssh: host must be a non-empty string')
@@ -278,6 +307,7 @@ export class SshRegistry extends Service {
       host,
       port,
       username,
+      ...(input.docker === undefined ? {} : { docker: { ...input.docker } }),
       ...(cwd === '' ? {} : { cwd }),
       jump: (input.jump ?? []).map(hop => ({
         host: hop.host,
@@ -291,8 +321,15 @@ export class SshRegistry extends Service {
     if (input.privateKeyPath !== undefined && input.privateKeyPath !== '') spec.privateKeyPath = input.privateKeyPath
     if (input.passphrase !== undefined && input.passphrase !== '') spec.passphrase = input.passphrase
     if (input.agent !== undefined && input.agent !== '') spec.agent = input.agent
+    if (input.strictHostKeyChecking === true) spec.strictHostKeyChecking = true
+    if (input.knownHosts !== undefined && input.knownHosts.length > 0) spec.knownHosts = [...input.knownHosts]
+    if (spec.docker !== undefined) {
+      const probe = new SshConnection(spec)
+      try { await probe.prepareDocker() } finally { probe.dispose() }
+    }
     this.specs.set(id, spec)
     void this.persist()
+    this.ctx.emit('ssh-registry/change')
     return { id, view: this.viewOf(spec) }
   }
 
@@ -307,6 +344,7 @@ export class SshRegistry extends Service {
       connection.dispose()
     }
     void this.persist()
+    this.ctx.emit('ssh-registry/change')
     return true
   }
 
@@ -318,7 +356,8 @@ export class SshRegistry extends Service {
       host: input.host,
       port: input.port ?? 22,
       username: input.username ?? '',
-      cwd: '/tmp',
+      ...(input.docker === undefined ? {} : { docker: { ...input.docker } }),
+      cwd: input.cwd ?? (input.docker === undefined ? '/tmp' : '/'),
       jump: (input.jump ?? []).map(hop => ({
         host: hop.host,
         port: hop.port,
@@ -331,6 +370,8 @@ export class SshRegistry extends Service {
     if (input.privateKeyPath !== undefined && input.privateKeyPath !== '') spec.privateKeyPath = input.privateKeyPath
     if (input.passphrase !== undefined && input.passphrase !== '') spec.passphrase = input.passphrase
     if (input.agent !== undefined && input.agent !== '') spec.agent = input.agent
+    if (input.strictHostKeyChecking === true) spec.strictHostKeyChecking = true
+    if (input.knownHosts !== undefined && input.knownHosts.length > 0) spec.knownHosts = [...input.knownHosts]
     const connection = new SshConnection(spec)
     try {
       await connection.getClient()
@@ -452,6 +493,7 @@ export class SshRegistry extends Service {
       host: spec.host,
       port: spec.port,
       username: spec.username,
+      ...(spec.docker === undefined ? {} : { docker: { ...spec.docker } }),
       ...(spec.cwd !== undefined ? { cwd: spec.cwd } : {}),
       auth,
       jumpHosts: (spec.jump ?? []).map(hop => `${hop.username ?? spec.username}@${hop.host}:${hop.port ?? 22}`),

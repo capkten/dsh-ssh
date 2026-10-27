@@ -166,13 +166,43 @@ function hostVerifierFor(knownHosts: readonly string[]): (key: Buffer) => boolea
     return knownHosts.some((entry) => {
       // A known_hosts line is "<host> <keytype> <token>"; the token is the field that varies.
       const token = entry.trim().split(/\s+/).at(-1) ?? ''
-      return token === fingerprint || token === raw
+      return token.replace(/=+$/, '') === fingerprint.replace(/=+$/, '') || token === raw
     })
   }
 }
 
 /** OpenSSH's default identity probe order, used when no auth is configured. */
 const DEFAULT_IDENTITY_FILES = ['.ssh/id_ed25519', '.ssh/id_ecdsa', '.ssh/id_rsa']
+
+/**
+ * Read trusted host keys for one target from `~/.ssh/known_hosts`. Plain host
+ * names and `[host]:port` spellings are matched; hashed entries are skipped
+ * (ssh2 would need the hash algorithm, and OpenSSH's own file is authoritative
+ * on the host). Returns raw base64 key tokens for the verifier.
+ * @param host - target hostname or address.
+ * @param port - target SSH port.
+ * @returns trusted key tokens, or an empty array when the file has no entry.
+ */
+export function knownHostsFor(host: string, port: number): string[] {
+  try {
+    const path = join(homedir(), '.ssh', 'known_hosts')
+    if (!existsSync(path)) return []
+    const tokens: string[] = []
+    for (const rawLine of readFileSync(path, 'utf8').split(/\r?\n/)) {
+      const line = rawLine.trim()
+      if (line.length === 0 || line.startsWith('#')) continue
+      const fields = line.split(/\s+/)
+      const names = fields[0]
+      const token = fields[2]
+      if (names === undefined || token === undefined) continue
+      const matches = names.split(',').some(name => name === host || name === `[${host}]:${port}`)
+      if (matches) tokens.push(token)
+    }
+    return tokens
+  } catch {
+    return []
+  }
+}
 
 /**
  * The first existing OpenSSH default identity, mirroring the ssh client's own
@@ -294,7 +324,7 @@ export class SshRuntime extends Service {
     readyTimeout: z.number().default(45_000),
     keepaliveInterval: z.number().default(0),
     keepaliveCountMax: z.number().default(3),
-    strictHostKeyChecking: z.boolean().default(false),
+    strictHostKeyChecking: z.boolean().default(true),
     knownHosts: z.array(z.string()).default([]),
   })
 
@@ -318,6 +348,9 @@ export class SshRuntime extends Service {
     super(ctx, 'ssh')
     const resolved = config as ResolvedConfig
     this.validate(resolved)
+    if (resolved.strictHostKeyChecking && resolved.knownHosts.length === 0) {
+      resolved.knownHosts = knownHostsFor(resolved.host, resolved.port)
+    }
     this.config = resolved
     this.cwd = resolved.cwd
     this.endpoint = `${resolved.username}@${resolved.host}`
@@ -506,7 +539,7 @@ export class SshRuntime extends Service {
         const previous = clients[index - 1]
         const client = new Client()
         clients.push(client)
-        const config = toConnectConfig(host, this.config.strictHostKeyChecking, this.config.knownHosts)
+        const config = toConnectConfig(host, this.config.strictHostKeyChecking, index === this.hosts.length - 1 ? this.config.knownHosts : knownHostsFor(host.host, host.port))
         if (previous === undefined) {
           await connectReady(client, config)
         } else {

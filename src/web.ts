@@ -120,6 +120,12 @@ function isConnectionInput(value: unknown): value is ConnectionInput {
     if (field !== undefined && !isString(field)) return false
   }
   if (value.port !== undefined && (typeof value.port !== 'number' || !Number.isInteger(value.port))) return false
+  if (value.strictHostKeyChecking !== undefined && typeof value.strictHostKeyChecking !== 'boolean') return false
+  if (value.docker !== undefined && (!isRecord(value.docker) || !isString(value.docker.container) || (value.docker.user !== undefined && !isString(value.docker.user)))) return false
+  if (value.knownHosts !== undefined) {
+    if (!Array.isArray(value.knownHosts)) return false
+    for (const entry of value.knownHosts) if (!isString(entry) || entry.trim() === '') return false
+  }
   if (value.jump !== undefined) {
     if (!Array.isArray(value.jump)) return false
     for (const hop of value.jump) {
@@ -180,6 +186,10 @@ export function apply(ctx: Context, config: WebChannelConfig): void {
   /** The remote home directory: the login environment's HOME, else the spec cwd. */
   const remoteHome = async (id: string, signal?: AbortSignal): Promise<string> => {
     const connection = requireConnection(id)
+    if (connection.spec.docker !== undefined) {
+      await connection.getClient(signal)
+      return connection.cwd
+    }
     try {
       const environment = await connection.getRemoteEnvironment(signal)
       const home = environment.HOME
@@ -291,7 +301,7 @@ export function apply(ctx: Context, config: WebChannelConfig): void {
         }
         case 'connections.add': {
           const input = requirePayload(payload, isConnectionInput, 'connections.add')
-          const added = registry().add(input)
+          const added = await registry().add(input)
           return { ok: true, value: added }
         }
         case 'connections.remove': {

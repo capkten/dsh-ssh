@@ -15,6 +15,7 @@ import { quoteShellArg } from './runtime.ts'
 import type { SshTransport } from './transport.ts'
 import { readRemoteEnvironment, scrubRemoteEnvironment, serializeEnvironment } from './environment.ts'
 import { SshOutputCollector } from './output.ts'
+import { sshDebug } from './debug.ts'
 
 function isCollect(mode: SubprocessOutputMode): mode is SubprocessCollect {
   return mode !== 'pipe' && mode !== 'inherit'
@@ -154,6 +155,7 @@ export class SshSubprocessHandle implements SubprocessHandle {
     let channel: ClientChannel
     try {
       const command = await buildCommand(this.runtime, this.cwd, this.spec)
+      sshDebug(`exec on ${this.runtime.endpoint}: ${command.length > 400 ? `${command.slice(0, 400)}…` : command}`)
       const client = await this.runtime.getClient()
       channel = await new Promise<ClientChannel>((resolve, reject) => {
         client.exec(command, { pty: false }, (error, stream) => {

@@ -1,0 +1,17 @@
+{
+  "name": "dsh-ssh-tests-deps",
+  "private": true,
+  "type": "module",
+  "description": "Isolated test-only dependencies for dsh-ssh (never installed at repo root).",
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh-agent-loop-testkit": "^0.2.1-rc.2",
+    "@deepseek-ai/dsh-llm-mock-server": "^0.2.1-rc.2",
+    "@deepseek-ai/dsh-llm-replay": "^0.2.1-rc.2",
+    "@deepseek-ai/dsh-sdk-client": "^0.2.1-rc.2",
+    "@deepseek-ai/dsh-subprocess": "0.2.1-rc.2",
+    "@deepseek-ai/schemastery": "3.18.5",
+    "ssh2": "1.16.0",
+    "tsx": "^4.23.12"
+  }
+}

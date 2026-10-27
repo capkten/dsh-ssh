@@ -35,6 +35,7 @@ export interface JumpInput {
 
 /** The connection input the form assembles. */
 export interface ConnectionInputWire {
+  docker?: { container: string; user?: string }
   label?: string
   host: string
   port?: number
@@ -59,6 +60,7 @@ export interface ResolvedSshConfigView {
 
 /** Prefilled fields for a form opened from the sidebar (config host / auth fix). */
 export interface ConnectionDraft {
+  docker?: { container: string; user?: string }
   label?: string
   host?: string
   port?: string
@@ -158,6 +160,8 @@ export function ConnectionForm({ resolve, test, save, draft, locked, onClose, on
   const [passphrase, setPassphrase] = useState('')
   const [jumpText, setJumpText] = useState(draft?.jumpText ?? '')
   const [cwd, setCwd] = useState(draft?.cwd ?? '')
+  const [container, setContainer] = useState(draft?.docker?.container ?? '')
+  const [containerUser, setContainerUser] = useState(draft?.docker?.user ?? '')
   const [busy, setBusy] = useState(false)
   const [busyTask, setBusyTask] = useState<'resolve' | 'test' | 'save' | null>(null)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
@@ -197,6 +201,7 @@ export function ConnectionForm({ resolve, test, save, draft, locked, onClose, on
     const jump = parseJumpText(jumpText)
     const input: ConnectionInputWire = {
       host: host.trim(),
+      ...(container.trim() === '' ? {} : { docker: { container: container.trim(), ...(containerUser.trim() === '' ? {} : { user: containerUser.trim() }) } }),
       ...(port.trim() !== '' && Number.isInteger(Number(port.trim())) ? { port: Number(port.trim()) } : {}),
       ...(username.trim() !== '' ? { username: username.trim() } : {}),
       ...(label.trim() !== '' ? { label: label.trim() } : {}),
@@ -220,7 +225,7 @@ export function ConnectionForm({ resolve, test, save, draft, locked, onClose, on
     }
     setJumpText(resolved.jump.map(formatHop).join(', '))
     const user = resolved.username !== '' ? resolved.username : username
-    if (cwd.trim() === '' && user.trim() !== '') setCwd(`/home/${user.trim()}`)
+    if (container.trim() === '' && cwd.trim() === '' && user.trim() !== '') setCwd(`/home/${user.trim()}`)
     setResolveSummary(resolved)
   }
 
@@ -421,13 +426,24 @@ export function ConnectionForm({ resolve, test, save, draft, locked, onClose, on
               <input
                 className={styles.input}
                 value={cwd}
-                placeholder="/home/username"
+                placeholder={container.trim() === '' ? '/home/username' : '留空使用容器 WorkingDir'}
                 disabled={busy}
                 onChange={event => { setCwd(event.target.value) }}
               />
             </label>
           </div>
 
+          <div className={styles.rowFields}>
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Docker 容器（留空连接宿主机）</span>
+              <input className={styles.input} value={container} placeholder="turboocr_demo" disabled={busy} onChange={event => { setContainer(event.target.value) }} />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>容器用户（可选）</span>
+              <input className={styles.input} value={containerUser} placeholder="使用容器默认用户" disabled={busy || container.trim() === ''} onChange={event => { setContainerUser(event.target.value) }} />
+            </label>
+          </div>
+          {container.trim() !== '' && <p>文件、命令和终端均在容器中运行。保存时绑定容器 ID；容器须有 Bash、Python 3 和文件工具。执行权限取决于容器用户，不提供额外内核沙箱。</p>}
           <div className={styles.fieldGroup}>
             <span className={styles.fieldLabel} id="dsh-ssh-auth-label">认证方式</span>
             <div className={styles.segment} role="radiogroup" aria-labelledby="dsh-ssh-auth-label">

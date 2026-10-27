@@ -1,7 +1,7 @@
 {
   "name": "dsh-ssh",
   "version": "0.4.2",
-  "description": "SSH remote-execution plugin for DeepSeek Harness — ProxyJump chain, SFTP filesystem, subprocess and PTY over ssh2",
+  "description": "SSH remote-execution plugin for DeepSeek Harness - ProxyJump chain, SFTP filesystem, subprocess and PTY over ssh2",
   "type": "module",
   "license": "MIT",
   "author": "yuunagi_cn <yuunagi.cn@outlook.com>",
@@ -48,6 +48,30 @@
       "types": "./lib/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
+    "./shell": {
+      "types": "./lib/shell.d.ts",
+      "default": "./lib/shell.js"
+    },
+    "./tools": {
+      "types": "./lib/tools.d.ts",
+      "default": "./lib/tools.js"
+    },
+    "./context": {
+      "types": "./lib/context.d.ts",
+      "default": "./lib/context.js"
+    },
+    "./registry-ssh": {
+      "types": "./lib/registry-ssh.d.ts",
+      "default": "./lib/registry-ssh.js"
+    },
+    "./registry": {
+      "types": "./lib/registry.d.ts",
+      "default": "./lib/registry.js"
+    },
+    "./preset": {
+      "types": "./lib/preset.d.ts",
+      "default": "./lib/preset.js"
+    },
     "./package.json": "./package.json"
   },
   "dsh": {
@@ -72,6 +96,9 @@
   "scripts": {
     "build": "tsc && tsdown",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --tsconfig tests/tsconfig.test.json --test \"tests/unit/*.test.ts\"",
+    "test:e2e": "node tests/integration/run-e2e.mjs",
+    "test:ssh": "node tests/integration/ssh-preflight.mjs",
     "prepare": "husky",
     "prepublishOnly": "npm run typecheck && npm run build",
     "release": "commit-and-tag-version"
@@ -92,14 +119,6 @@
     "dsh": ">=0.2.0-rc.2 <0.3.0"
   },
   "dependencies": {
-    "@deepseek-ai/cordis": "^4.0.5",
-    "@deepseek-ai/dsh-fs": "^0.2.1-rc.2",
-    "@deepseek-ai/dsh-host-directory-picker": "^0.2.1-rc.2",
-    "@deepseek-ai/dsh-host-directory-picker-native": "^0.2.1-rc.2",
-    "@deepseek-ai/dsh-invariants": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-subprocess": "^0.2.1-rc.2",
-    "@deepseek-ai/dsh-timeout": "^0.2.1-rc.2",
-    "@deepseek-ai/schemastery": "^3.18.5",
     "ssh2": "^1.16.0"
   },
   "devDependencies": {
@@ -114,6 +133,33 @@
     "react": "^18.3.1",
     "tsdown": "^0.22.2",
     "tsx": "^4.23.12",
-    "typescript": "^6.0.0"
+    "typescript": "^6.0.0",
+    "unrun": "^0.3.1",
+    "@deepseek-ai/cordis": "^4.0.5",
+    "@deepseek-ai/dsh-bash-local": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-fs": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-host-directory-picker": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-host-directory-picker-native": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-invariants": "^0.2.0-rc.2",
+    "@deepseek-ai/dsh-sandbox": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-shell": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-subprocess": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-timeout": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.5"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.5",
+    "@deepseek-ai/dsh-bash-local": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-fs": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-host-directory-picker": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-host-directory-picker-native": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-invariants": "^0.2.0-rc.2",
+    "@deepseek-ai/dsh-sandbox": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-shell": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-subprocess": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-timeout": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.5"
   }
 }

@@ -24,6 +24,8 @@ import { parseSshRoute } from './registry.ts'
 
 /** The connection-owner face both providers consume. */
 export interface SshTransport {
+  /** Fixed session target; absent only for legacy host-wide routing. */
+  readonly boundConnectionId?: string
   /** Human-readable connection target for UI surfaces (`username@host`). */
   readonly endpoint: string
   /** The transport's default remote working directory. */
@@ -64,6 +66,23 @@ export function parseSshTargetKey(targetKey: string): { connectionId?: string; p
   return { path: targetKey }
 }
 
+/**
+ * Recover the registry route a local placeholder names
+ * (`<root>/<id>/<remote path…>` → connection id + absolute POSIX path).
+ * Exported for the remote preset, context and filesystem-policy layers that
+ * must translate a session's local placeholder cwd back into its remote route.
+ * @param value - a candidate local placeholder path.
+ * @returns the route, or null when the value is not inside the placeholder tree.
+ */
+export function parseSshPlaceholder(value: string): { id: string; path: string } | null {
+  return routeFromPlaceholder(value)
+}
+
+/** Whether a string names a remote route (either spelling). */
+export function isSshRoutePath(value: string): boolean {
+  return parseSshRoute(value) !== null || routeFromPlaceholder(value) !== null
+}
+
 /** Root of the local placeholder tree standing in for remote routes. */
 export function sshRoutesRoot(): string {
   return resolve(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'dsh-ssh-routes')
@@ -71,8 +90,14 @@ export function sshRoutesRoot(): string {
 
 /** The local placeholder path of one registry route (created by `session.route`). */
 export function sshRoutePlaceholder(connectionId: string, remotePath: string): string {
-  if (!/^[A-Za-z0-9._-]+$/.test(connectionId)) {
+  if (connectionId === '.' || connectionId === '..' || !/^[A-Za-z0-9._-]+$/.test(connectionId)) {
     throw new Error(`dsh-ssh: invalid connection id ${JSON.stringify(connectionId)}`)
+  }
+  // A remote POSIX path may legally contain characters Windows cannot put in a
+  // path segment. Rejecting them keeps the placeholder provably inside the
+  // connection root instead of letting a backslash or drive colon escape it.
+  if (/[\\:\0]/.test(remotePath)) {
+    throw new Error(`dsh-ssh: remote path ${JSON.stringify(remotePath)} contains characters that cannot be represented in a local route placeholder`)
   }
   // Normalize first: an absolute remote path clamps `..` at `/`, and the
   // filter is a backstop so a placeholder can never leave its connection root.
@@ -108,6 +133,7 @@ export function resolveSshCwd(ctx: Context, cwd: string | undefined): SshCwdRout
       throw new Error(`dsh-ssh: invalid remote working directory ${JSON.stringify(cwd)}`)
     }
     if (parsed !== null) {
+      assertSessionTarget(ctx, parsed.id)
       const registry = ctx.get('sshRegistry') as SshRegistry | undefined
       const connection = registry?.get(parsed.id)
       if (connection === undefined) {
@@ -125,10 +151,19 @@ export function resolveSshTargetKey(ctx: Context, targetKey: string): SshCwdRout
   if (parsed.connectionId === undefined) {
     return { transport: ctx.ssh as unknown as SshTransport, cwd: (ctx.ssh as SshRuntime).resolveRemoteCwd(parsed.path), path: parsed.path }
   }
+  assertSessionTarget(ctx, parsed.connectionId)
   const registry = ctx.get('sshRegistry') as SshRegistry | undefined
   const connection = registry?.get(parsed.connectionId)
   if (connection === undefined) {
     throw new Error(`dsh-ssh: target names unknown connection "${parsed.connectionId}" (is dsh-ssh/web mounted?)`)
   }
   return { transport: connection, cwd: parsed.path, connectionId: parsed.connectionId, path: parsed.path }
+}
+
+/** Explicit route arguments must not override a session's fixed host. */
+function assertSessionTarget(ctx: Context, connectionId: string): void {
+  const bound = (ctx.ssh as unknown as SshTransport | undefined)?.boundConnectionId
+  if (bound !== undefined && bound !== connectionId) {
+    throw new Error(`dsh-ssh: session is bound to connection "${bound}"; refusing another connection "${connectionId}"`)
+  }
 }

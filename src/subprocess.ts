@@ -9,7 +9,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, posix } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import { SubprocessRuntime, SubprocessExecutableNotFoundError } from '@deepseek-ai/dsh-subprocess'
 import type {
   SubprocessHandle,
   SubprocessSpawnSpec,
@@ -19,11 +19,11 @@ import type {
 } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { quoteShellArg } from './runtime.ts'
-import { readRemoteEnvironment } from './environment.ts'
 import { resolveSshCwd } from './transport.ts'
 import { SshSubprocessHandle } from './process.ts'
 import { spawnSshTerminal } from './terminal.ts'
 import type { SshTerminalHandle } from './terminal.ts'
+import { sshDebug } from './debug.ts'
 
 /**
  * Enforce the seam's documented grace bound (positive, finite, one Node timer),
@@ -82,7 +82,7 @@ export class SshSubprocessRuntime extends SubprocessRuntime {
       )
       signal?.throwIfAborted()
       if (result.exitCode !== 0) {
-        throw new Error(`subprocess-ssh: command ${JSON.stringify(command)} is not an executable file`)
+        throw new SubprocessExecutableNotFoundError(command)
       }
       return command
     }
@@ -100,7 +100,7 @@ export class SshSubprocessRuntime extends SubprocessRuntime {
       || executable.length === 0
       || executable.includes('\n')
       || (!posix.isAbsolute(executable) && !executable.includes('/'))) {
-      throw new Error(`subprocess-ssh: executable ${JSON.stringify(command)} did not resolve to one absolute path`)
+      throw new SubprocessExecutableNotFoundError(command)
     }
     return posix.isAbsolute(executable) ? executable : posix.resolve(this.ctx.ssh.cwd, executable)
   }
@@ -108,15 +108,9 @@ export class SshSubprocessRuntime extends SubprocessRuntime {
   /** @inheritdoc */
   async terminalEnvironment(signal?: AbortSignal): Promise<SubprocessTerminalEnvironment> {
     signal?.throwIfAborted()
-    let defaultShell: string | undefined
-    try {
-      const environment = await readRemoteEnvironment(this.ctx.ssh)
-      const shell = environment.SHELL
-      if (shell !== undefined && shell.trim() !== '') defaultShell = shell
-    } catch {
-      // The login environment may be unreadable before the first connection;
-      // the remote platform is still known.
-    }
+    // Verify the transport even when environment metadata was cached. Missing
+    // optional shells are discovery misses; connection failures must propagate.
+    const defaultShell = await this.resolveExecutable('bash', undefined, signal)
     signal?.throwIfAborted()
     return { platform: 'posix', ...(defaultShell !== undefined ? { defaultShell } : {}) }
   }
@@ -133,6 +127,7 @@ export class SshSubprocessRuntime extends SubprocessRuntime {
       throw new Error(`aborted before spawn: ${String(spec.signal.reason)}`)
     }
     const route = resolveSshCwd(this.ctx, spec.cwd)
+    sshDebug(`spawn argv[0]=${JSON.stringify(program)} cwd=${JSON.stringify(spec.cwd)} -> ${route.transport.endpoint}:${route.cwd}`)
       const handle = new SshSubprocessHandle(route.transport, route.cwd, spec, this.spillDir)
     this.live.add(handle)
     const release = async (): Promise<void> => {

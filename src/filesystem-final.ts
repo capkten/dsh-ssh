@@ -22,8 +22,10 @@ import type {
   FsWriteIntent,
   FsWriteOutcome,
 } from '@deepseek-ai/dsh-fs'
+import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
+import { parseSshRoute } from './registry.ts'
 import { quoteShellArg } from './runtime.ts'
-import { parseSshTargetKey, resolveSshCwd, resolveSshTargetKey, sshTargetKey } from './transport.ts'
+import { parseSshPlaceholder, parseSshTargetKey, resolveSshCwd, resolveSshTargetKey, sshTargetKey } from './transport.ts'
 import type { SshTransport } from './transport.ts'
 
 const BINARY_SAMPLE_BYTES = 8192
@@ -83,8 +85,8 @@ function entryType(stats: Stats): FsInfo['type'] {
   return 'other'
 }
 
-function entryVersion(stats: Stats, path: string): ReturnType<typeof FsVersion> {
-  return FsVersion(`ssh:${createHash('sha256').update(JSON.stringify([path, stats.size, stats.mtime, stats.mode])).digest('hex')}`)
+function entryVersion(stats: Stats, path: string, contentHash?: string): ReturnType<typeof FsVersion> {
+  return FsVersion(`ssh:${createHash('sha256').update(JSON.stringify([path, stats.size, stats.mtime, stats.mode, contentHash])).digest('hex')}`)
 }
 
 function mapError(error: unknown, operation: string, displayPath: string, signal?: AbortSignal): FsError {
@@ -128,6 +130,55 @@ export class SshFileSystem extends FileSystem {
 
   private readonly locks = new Map<string, Promise<unknown>>()
 
+  /**
+   * The confinement fact the tool layer advertises. A remote backend enforces
+   * the same mode set as the local sandbox (read-only / workspace-write /
+   * danger-full-access), translated to remote paths; there is no remote KERNEL
+   * sandbox behind it, so only filesystem mutations are confined.
+   */
+  override get sandboxMode(): SandboxMode | undefined {
+    const policy = this.ctx.get('sandboxPolicy')
+    return policy === undefined ? undefined : policy.defaultMode
+  }
+
+  /**
+   * Fence one mutation by the per-call policy, translating the policy's
+   * workspace root (a local route placeholder) onto the remote host.
+   * @param target - the resolved remote target.
+   * @param policy - per-call sandbox mode and workspace root.
+   * @throws FsError `FS_SANDBOX_DENIED` outside the writable root (or in read-only mode).
+   */
+  private assertWritable(target: FsTarget, policy: SandboxExecutionPolicy | undefined): void {
+    if (policy === undefined) return
+    if (policy.mode === 'danger-full-access') return
+    const denied = (): never => {
+      throw new FsError(`cannot write "${target.displayPath}": file access denied under ${policy.mode} mode`, 'FS_SANDBOX_DENIED')
+    }
+    if (policy.mode !== 'workspace-write') return denied()
+    const route = this.routeTarget(target)
+    const root = this.remoteRootOf(policy.workspaceRoot)
+    if (root === undefined) return denied()
+    if (root.connectionId !== undefined && route.connectionId !== undefined && root.connectionId !== route.connectionId) return denied()
+    const relative = posix.relative(root.path, route.path)
+    if (relative !== '' && (relative === '..' || relative.startsWith('../') || posix.isAbsolute(relative))) return denied()
+  }
+
+  /**
+   * Translate a policy workspace root into a remote route. The harness passes
+   * the session's local placeholder cwd; an `ssh://` spelling is accepted for
+   * deployments that store routes directly.
+   * @param workspaceRoot - the policy's absolute workspace root.
+   * @returns its remote route, or undefined when it is not remote at all.
+   */
+  private remoteRootOf(workspaceRoot: string): { connectionId?: string; path: string } | undefined {
+    const route = parseSshRoute(workspaceRoot)
+    if (route !== null) return { connectionId: route.id, path: route.path }
+    const placeholder = parseSshPlaceholder(workspaceRoot)
+    if (placeholder !== null) return { connectionId: placeholder.id, path: placeholder.path }
+    if (posix.isAbsolute(workspaceRoot)) return { path: workspaceRoot }
+    return undefined
+  }
+
   private routeCwd(cwd: string | undefined): { transport: SshTransport; base: string; connectionId?: string } {
     const route = resolveSshCwd(this.ctx, cwd)
     return { transport: route.transport, base: route.cwd, ...(route.connectionId !== undefined ? { connectionId: route.connectionId } : {}) }
@@ -148,6 +199,21 @@ export class SshFileSystem extends FileSystem {
   override async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
     assertNotAborted(opts?.signal, 'resolve')
     if (path.trim().length === 0) throw new FsError('file_path must be a non-empty string', 'FS_NOT_FOUND')
+    // A caller may pass the session cwd itself (a local route placeholder) or
+    // an `ssh://` target key as the path. Such a spelling is a complete route,
+    // not a path relative to the aggregate default directory.
+    const direct = parseSshTargetKey(path)
+    if (direct.connectionId !== undefined) {
+      const route = resolveSshTargetKey(this.ctx, path)
+      const displayPath = sshTargetKey(route.connectionId as string, route.path)
+      try {
+        const canonical = await this.canonicalPath(route.path, opts?.signal, route.transport)
+        assertNotAborted(opts?.signal, 'resolve')
+        return { targetKey: FsTargetKey(sshTargetKey(route.connectionId as string, canonical)), displayPath }
+      } catch (error: unknown) {
+        throw mapError(error, 'resolve', displayPath, opts?.signal)
+      }
+    }
     const route = this.routeCwd(opts?.cwd)
     const remotePath = posix.resolve(route.base, path)
     const displayPath = route.connectionId === undefined ? remotePath : sshTargetKey(route.connectionId, remotePath)
@@ -185,7 +251,7 @@ export class SshFileSystem extends FileSystem {
     const stats = await this.probe(route.path, target.displayPath, signal, route.transport)
     if (stats === undefined) return undefined
     return {
-      version: entryVersion(stats, route.path),
+      version: await this.versionOf(stats, route.path, route.transport, signal),
       type: entryType(stats),
       ...(stats.isFile() ? { size: stats.size } : {}),
     }
@@ -194,17 +260,30 @@ export class SshFileSystem extends FileSystem {
   override async lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
     assertNotAborted(signal, 'lstat')
     if (path.trim().length === 0) throw new FsError('file_path must be a non-empty string', 'FS_NOT_FOUND')
-    const route = this.routeCwd(opts?.cwd)
-    const displayPath = posix.resolve(route.base, path)
-    const sftp = await route.transport.getSftp()
+    const direct = parseSshTargetKey(path)
+    let transport: SshTransport
+    let remotePath: string
+    let displayPath: string
+    if (direct.connectionId !== undefined) {
+      const routed = resolveSshTargetKey(this.ctx, path)
+      transport = routed.transport
+      remotePath = routed.path
+      displayPath = sshTargetKey(direct.connectionId, routed.path)
+    } else {
+      const cwdRoute = this.routeCwd(opts?.cwd)
+      transport = cwdRoute.transport
+      remotePath = posix.resolve(cwdRoute.base, path)
+      displayPath = remotePath
+    }
+    const sftp = await transport.getSftp()
     try {
       const stats = await new Promise<Stats>((resolve, reject) => {
-        sftp.lstat(displayPath, (error, value) => { if (error !== undefined) reject(error); else resolve(value) })
+        sftp.lstat(remotePath, (error, value) => { if (error !== undefined) reject(error); else resolve(value) })
       })
       assertNotAborted(signal, 'lstat')
       const type = stats.isSymbolicLink() ? 'symlink' as const : stats.isFile() ? 'file' as const : stats.isDirectory() ? 'directory' as const : 'other' as const
       return {
-        version: entryVersion(stats, displayPath),
+        version: await this.versionOf(stats, remotePath, transport, signal),
         type,
         ...(stats.isFile() ? { size: stats.size } : {}),
       }
@@ -264,9 +343,12 @@ export class SshFileSystem extends FileSystem {
     const route = this.routeTarget(target)
     const sftp = await route.transport.getSftp()
     const displayPath = target.displayPath
-    const stream = sftp.createReadStream(route.path) as Readable
     return {
       async *[Symbol.asyncIterator](): AsyncGenerator<string> {
+        // Open only when the consumer starts reading. A controller may request
+        // an iterable and then abandon it; an eager SFTP stream has no error
+        // listener in that case and can crash the process on disconnect.
+        const stream = sftp.createReadStream(route.path) as Readable
         const decoder = new TextDecoder('utf-8', { fatal: true })
         let sampledBytes = 0
         try {
@@ -292,6 +374,8 @@ export class SshFileSystem extends FileSystem {
           }
         } catch (error: unknown) {
           throw mapError(error, 'read', displayPath, signal)
+        } finally {
+          stream.destroy()
         }
       },
     }
@@ -319,7 +403,7 @@ export class SshFileSystem extends FileSystem {
           name: entry.filename,
           type: entryType(entry.attrs),
           target: { targetKey: FsTargetKey(childKey), displayPath: childDisplayPath },
-          version: entryVersion(entry.attrs, canonical),
+          version: await this.versionOf(entry.attrs, canonical, route.transport, signal),
           ...(entry.attrs.isFile() ? { size: entry.attrs.size } : {}),
         })
       }
@@ -334,14 +418,16 @@ export class SshFileSystem extends FileSystem {
     content: string,
     expected?: FsWriteIntent,
     signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
   ): Promise<FsWriteOutcome> {
+    this.assertWritable(target, sandboxPolicy)
     return this.withLock(String(target.targetKey), async () => {
       const route = this.routeTarget(target)
       const existing = await this.probe(route.path, target.displayPath, signal, route.transport)
       if (existing !== undefined && !existing.isFile()) {
         throw new FsError(`cannot write "${target.displayPath}": not a regular file`, 'FS_NOT_REGULAR_FILE')
       }
-      this.checkWriteIntent(existing, expected, target)
+      await this.checkWriteIntent(existing, expected, target, signal)
       const before = existing === undefined ? null : await this.readForDiff(target, signal)
       const version = await this.writeAtomic(target, content, existing, expected?.kind === 'createIfAbsent', signal)
       return {
@@ -358,7 +444,9 @@ export class SshFileSystem extends FileSystem {
     edit: FsEditRequest,
     expected?: { version: ReturnType<typeof FsVersion> },
     signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
   ): Promise<FsEditOutcome> {
+    this.assertWritable(target, sandboxPolicy)
     return this.withLock(String(target.targetKey), async () => {
       const route = this.routeTarget(target)
       const existing = await this.probe(route.path, target.displayPath, signal, route.transport)
@@ -368,7 +456,7 @@ export class SshFileSystem extends FileSystem {
       if (!existing.isFile()) {
         throw new FsError(`cannot edit "${target.displayPath}": not a regular file`, 'FS_NOT_REGULAR_FILE')
       }
-      if (expected !== undefined && entryVersion(existing, route.path) !== expected.version) {
+      if (expected !== undefined && (await this.versionOf(existing, route.path, route.transport, signal)) !== expected.version) {
         throw new FsError(`cannot edit "${target.displayPath}": file changed since it was read`, 'FS_STALE_VERSION')
       }
       const raw = await this.readForEdit(target, signal)
@@ -378,6 +466,17 @@ export class SshFileSystem extends FileSystem {
       const version = await this.writeAtomic(target, storage, existing, false, signal)
       return { version, before, after }
     })
+  }
+
+  /** SFTP v3 timestamps have second precision; size+mtime misses same-size edits. */
+  private async versionOf(stats: Stats, path: string, transport: SshTransport, signal?: AbortSignal): Promise<ReturnType<typeof FsVersion>> {
+    if (!stats.isFile()) return entryVersion(stats, path)
+    const result = await transport.exec(`sha256sum -- ${quoteShellArg(path)}`, signal === undefined ? undefined : { signal })
+    const hash = result.stdout.slice(0, 64)
+    if (result.exitCode !== 0 || !/^[a-f0-9]{64}$/i.test(hash)) {
+      throw new FsError(`cannot version "${path}": remote sha256sum failed`, 'FS_IO_ERROR')
+    }
+    return entryVersion(stats, path, hash)
   }
 
   private async withLock<T>(targetKey: string, operation: () => Promise<T>): Promise<T> {
@@ -441,12 +540,12 @@ export class SshFileSystem extends FileSystem {
     }
   }
 
-  private checkWriteIntent(existing: Stats | undefined, expected: FsWriteIntent | undefined, target: FsTarget): void {
+  private async checkWriteIntent(existing: Stats | undefined, expected: FsWriteIntent | undefined, target: FsTarget, signal?: AbortSignal): Promise<void> {
     if (expected?.kind === 'createIfAbsent' && existing !== undefined) {
       throw new FsError(`cannot overwrite existing "${target.displayPath}" without reading it first`, 'FS_NOT_OBSERVED')
     }
     if (expected?.kind === 'replaceIfVersion') {
-      if (existing === undefined || entryVersion(existing, this.pathOf(target)) !== expected.version) {
+      if (existing === undefined || (await this.versionOf(existing, this.pathOf(target), this.routeTarget(target).transport, signal)) !== expected.version) {
         throw new FsError(`cannot write "${target.displayPath}": file changed since it was read`, 'FS_STALE_VERSION')
       }
     }
@@ -502,14 +601,16 @@ export class SshFileSystem extends FileSystem {
         if (publication.stdout !== 'created') throw new Error('guarded create returned an invalid publication result')
       } else {
         await new Promise<void>((resolve, reject) => {
-          sftp.rename(temporary, targetPath, error => { if (error !== undefined) reject(error); else resolve() })
+          // SFTP v3 RENAME cannot replace an existing destination. OpenSSH's
+          // POSIX extension provides the atomic replacement edit/write needs.
+          sftp.ext_openssh_rename(temporary, targetPath, error => { if (error != null) reject(error); else resolve() })
         })
       }
       assertNotAborted(signal, 'write')
       await this.removeStaging(stagingDirectory, route.transport)
       const committed = await this.probe(targetPath, target.displayPath, signal, route.transport)
       if (committed === undefined) throw new FsError(`cannot write "${target.displayPath}": commit produced no file`, 'FS_IO_ERROR')
-      return entryVersion(committed, targetPath)
+      return this.versionOf(committed, targetPath, route.transport, signal)
     } catch (error: unknown) {
       if (stagingCreated) await this.removeStaging(stagingDirectory, route.transport)
       throw mapError(error, 'write', target.displayPath, signal)
@@ -519,6 +620,8 @@ export class SshFileSystem extends FileSystem {
   private async removeStaging(directory: string, transport: SshTransport = this.ctx.ssh as unknown as SshTransport): Promise<void> {
     const sftp = await transport.getSftp()
     try {
+      // Guarded hard-link publication retains the private staging link.
+      await new Promise<void>(resolve => { sftp.unlink(posix.join(directory, 'content'), () => { resolve() }) })
       await new Promise<void>((resolve, reject) => {
         sftp.rmdir(directory, error => { if (error !== undefined) reject(error); else resolve() })
       })

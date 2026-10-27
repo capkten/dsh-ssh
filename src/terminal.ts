@@ -50,7 +50,7 @@ export class SshTerminalHandle implements SubprocessTerminalHandle {
     if (this.topLevelExited) return Promise.reject(new Error('terminal process has exited'))
     return new Promise<void>((resolve, reject) => {
       this.channel.write(Buffer.from(data, 'utf8'), (error) => {
-        if (error !== undefined) reject(error)
+        if (error != null) reject(error)
         else resolve()
       })
     })
@@ -140,17 +140,23 @@ export async function spawnSshTerminal(ssh: SshTransport, cwd: string, spec: Sub
   }
   const remote = await readRemoteEnvironment(ssh)
   const environment = serializeEnvironment(scrubRemoteEnvironment(remote), spec.env)
-  const client = await ssh.getClient()
+  const client = await ssh.getClient(spec.signal)
   spec.signal?.throwIfAborted()
+  const argv = spec.argv.map(quoteShellArg).join(' ')
+  const command = `cd ${quoteShellArg(cwd)} && exec env -i -- ${environment} ${argv}`
   const channel = await new Promise<ClientChannel>((resolve, reject) => {
-    client.shell({ term: 'xterm-256color', rows: spec.rows, cols: spec.cols }, (error, stream) => {
-      if (error !== undefined) reject(error)
+    // Send setup as an SSH exec request, not as typed PTY input: a serialized
+    // login environment can exceed the terminal's canonical input line limit.
+    client.exec(command, { pty: { term: 'xterm-256color', rows: spec.rows, cols: spec.cols } }, (error, stream) => {
+      if (error != null) reject(error)
       else resolve(stream)
     })
   })
   const handle = new SshTerminalHandle(channel, spec.graceMs)
-  const argv = spec.argv.map(quoteShellArg).join(' ')
-  await handle.write(`cd ${quoteShellArg(cwd)} && exec env -i -- ${environment} ${argv}\r`)
+  const abort = (): void => { void handle.terminate().catch(() => {}) }
+  spec.signal?.addEventListener('abort', abort, { once: true })
+  void handle.done.finally(() => spec.signal?.removeEventListener('abort', abort)).catch(() => {})
+  if (spec.signal?.aborted === true) abort()
   spec.signal?.throwIfAborted()
   return handle
 }

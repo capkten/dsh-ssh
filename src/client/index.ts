@@ -28,6 +28,7 @@ export interface WireListing {
 }
 
 export interface ConnectionView {
+  docker?: { container: string; user?: string }
   id: string
   label: string
   host: string

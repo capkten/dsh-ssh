@@ -1,55 +1,35 @@
 name: Release
-
-# Cut a release by pushing a version tag:
-#   git tag v0.1.1 && git push origin v0.1.1
-# The tag must match the `version` field in package.json; the workflow then
-# publishes to npm (automation token, bypasses 2FA) and drafts a GitHub
-# Release with auto-generated notes.
-
 on:
   push:
     tags: ['v*']
-
 permissions:
   contents: write
-
 jobs:
-  publish:
-    name: publish dsh-ssh
+  package:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org/
+          node-version: '22.19.0'
           cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-
-      - name: Verify tag matches package version
-        run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PKG_VERSION="$(node -p "require('./package.json').version")"
-          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "error: tag v${TAG_VERSION} does not match package.json version ${PKG_VERSION}" >&2
-            exit 1
-          fi
-
-      - name: Skip publish when the version already exists
-        run: |
-          if npm view "dsh-ssh@${GITHUB_REF_NAME#v}" version >/dev/null 2>&1; then
-            echo "version ${GITHUB_REF_NAME#v} is already published; skipping npm publish"
-            echo "SKIP_PUBLISH=true" >> "$GITHUB_ENV"
-          fi
-
-      - name: Publish to npm
-        if: env.SKIP_PUBLISH != 'true'
-        run: npm publish
+      - name: Check tag and version
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Draft GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; const p=JSON.parse(fs.readFileSync("package.json","utf8")); if(process.env.RELEASE_TAG!==`v${p.version}`) throw new Error("Tag/version mismatch")'
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Package and verify payload
+        run: |
+          npm pack --ignore-scripts
+          node scripts/check-package.mjs dsh-ssh-*.tgz
+          sha256sum dsh-ssh-*.tgz > SHA256SUMS.txt
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" dsh-ssh-*.tgz SHA256SUMS.txt --verify-tag --prerelease --title "$RELEASE_TAG — SSH / Docker for DSH rc.5" --notes-file RELEASE_NOTES.md

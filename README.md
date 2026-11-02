@@ -2,6 +2,11 @@
 
 English | [中文](README.zh.md)
 
+**Fork release:** [Download compiled packages](https://github.com/capkten/dsh-ssh/releases)
+and follow [INSTALL.md](INSTALL.md). Version 0.4.3 is a prerelease for Desktop
+0.2.1-rc.5. The bare npm name belongs to upstream and does not select this fork.
+See [UPSTREAM.md](UPSTREAM.md) for attribution and host SDK policy.
+
 <p align="center">
   <img src="https://img.shields.io/npm/v/dsh-ssh" alt="npm version">
   <img src="https://img.shields.io/npm/l/dsh-ssh" alt="license">
@@ -17,7 +22,7 @@ ProxyJump chains, SFTP, full auth, host-key verification support.
 
 ![Add a workspace over SSH](docs/images/add-workspace.png)
 
-## How it works (DSH 0.2.1-rc.2)
+## How it works
 
 DSH mounts model-facing tools through **agent presets**, and the stock preset resolves the *host*
 `fs` / `subprocess` / `shell` services. dsh-ssh therefore:
@@ -38,19 +43,16 @@ never see the remote providers.
 
 ## Install
 
-```sh
-dsh plugin --profile desktop add dsh-ssh
-```
-
-Or use the Web UI: **Plugins → Add plugin → `dsh-ssh`**. Needs DeepSeek Harness 0.2.x and Node ≥ 22.
-A plain `npm i dsh-ssh` does not select the bundle; add it to `dsh.profile.bundles` yourself.
+Use the versioned GitHub Release `.tgz` and the Profile dependency/bundle steps in
+[INSTALL.md](INSTALL.md). Needs Desktop 0.2.1-rc.5 and Node ≥22.19.0.
+The automatically generated source ZIP is not the installation package.
 
 ## Security
 
 - Host-key verification: registry connections accept `strictHostKeyChecking` and `knownHosts`
   (`SHA256:…` fingerprints or raw base64 keys). With `strictHostKeyChecking: true` and no explicit
-  `knownHosts`, the matching entries of `~/.ssh/known_hosts` are used. The default stays permissive
-  (`false`) for compatibility with existing saved connections — enable it for new deployments.
+  `knownHosts`, the matching entries of `~/.ssh/known_hosts` are used. Strict
+  checking defaults to true; do not disable it to bypass an unknown host.
 - Connection passwords/passphrases persist verbatim in `<dsh home>/dsh-ssh-connections.json`; that
   file is operator-owned and should be protected like `~/.ssh`.
 - Remote commands run as the SSH login user. **There is no remote kernel sandbox**: only filesystem
@@ -61,9 +63,10 @@ A plain `npm i dsh-ssh` does not select the bundle; add it to `dsh.profile.bundl
 
 ## Limitations (honest list)
 
-- **Web sidebar File tree / file preview / “Open in app”** and the **Web sidebar terminal** read the
-  *host* `fs` / `subprocess` services in DSH 0.2.1, so they stay local for a remote workspace. The
-  model-facing terminal tool *is* remote.
+- The fork bridges official `workspaceFiles` controllers for routed file previews
+  and listings. Third-party sidebars bypassing that controller may be incompatible.
+  Full Desktop UI acceptance of this release remains pending; do not infer it
+  from passing model-tool tests. The model-facing terminal is remote.
 - The **changed-files (git) card** (`dsh-workspace-changes`) mixes local scratch files with remote
   git paths, so it is not meaningful for remote workspaces. Running `git` through the Bash tool is
   remote and works normally.
@@ -96,10 +99,16 @@ headless harness against a real SSH target (`npm run test:e2e`; requires the bun
 
 MIT
 
+### Remote compaction configuration
+
+The aggregate `ssh-remote` row accepts optional `compactionProvider` (a plugin package name) and `compactionConfig` (that provider's configuration). Omitting the provider keeps `@deepseek-ai/dsh-compaction-basic`. Settings are copied separately into each SSH/Docker preset's isolated compaction group. Local presets have separate engines; use the companion plugin's shared settings for local and remote compaction together.
+
+For example, a separately installed `dsh-compaction-session` provider can use `compactionConfig: { thresholdTokens: 256000, maxTokens: 8192, headroomTokens: 1024 }`. The model adapter's `contextWindow` remains a separate capacity setting. Output reservations may require an earlier effective threshold. Add an external provider's bundle to the Desktop profile and restart DSH before resuming sessions; a missing provider fails preset activation rather than falling back to local execution.
+
 
 ### Desktop integration gate (2026-10-23)
 
-Host SDKs are peers. Peers alone do not guarantee a single instance: run
+Host SDKs are supplied by the loader, not auto-installed as dependencies or peers. Run
 `node tests/integration/check-host-sdk.mjs <host-dsh-root> <installed-plugin-root>`
 before starting an isolated profile. All checked SDK paths must match.
 The default bundle keeps the official local browse provider; remote browsing
@@ -110,4 +119,12 @@ OpenSSH POSIX rename extension and fail explicitly when unavailable.
 Run `node tests/integration/provider-smoke.mjs` for real provider acceptance.
 Desktop sidebar terminal, file tree, and changed-files integration remain
 outside the verified remote agent tool path. SSH is not a remote kernel sandbox.
-See `docs/desktop-integration-20261023.md` for evidence and deployment boundaries.
+See [INSTALL.md](INSTALL.md) for current deployment boundaries. Historical local
+investigation logs and private environment evidence are not shipped in this repository.
+
+## Docker exec
+
+Connect to the SSH host, then choose a running Linux container and its workspace
+directory. No container sshd/port 22 is required. The host needs Docker CLI/daemon
+access and the container needs the required shell and file/search tools; minimal
+distroless/scratch images are not generally supported. See INSTALL.md for checks.

@@ -2,6 +2,7 @@ node_modules
 *.log
 .DS_Store
 lib
+*.tgz
 
 # Isolated test dependencies (own package.json under tests/_deps)
 tests/_deps/node_modules

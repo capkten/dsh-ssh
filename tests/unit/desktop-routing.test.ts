@@ -5,6 +5,38 @@ import { Context } from '@deepseek-ai/cordis'
 import { apply as presetsPlugin } from '../../src/preset.ts'
 import { apply as contextPlugin } from '../../src/context.ts'
 
+test('remote presets accept an optional compaction provider with independent configuration per connection', async () => {
+  const ctx = new Context()
+  const definitions: { plugins: unknown[] }[] = []
+  const supplied = { thresholdTokens: 256000, modelPolicies: [{ provider: 'test', model: 'm' }] }
+  ctx.provide('agentPresets', {
+    register: async (definition: { plugins: unknown[] }) => { definitions.push(definition); return async () => {} },
+    select: async (_agent: unknown, id: string) => id,
+  })
+  ctx.provide('sshRegistry', { list: () => ['c1', 'c2'].map(id => ({ id, label: id, username: 'test', host: 'test', port: 22 })) } as never)
+  ctx.provide('agents', { roots: () => [] })
+  const plugin = ctx.plugin(presetsPlugin, { compactionProvider: 'dsh-compaction-session', compactionConfig: supplied })
+  await plugin.await()
+  await new Promise(resolve => setImmediate(resolve))
+  const find = (rows: unknown[]): { name: string; config: typeof supplied } | undefined => {
+    for (const row of rows as { id: string; name: string; config?: unknown }[]) {
+      if (row.id === 'compaction-basic') return row as { name: string; config: typeof supplied }
+      if (Array.isArray(row.config)) { const match = find(row.config); if (match) return match }
+    }
+    return undefined
+  }
+  try {
+    assert.equal(definitions.length, 2)
+    const first = find(definitions[0]!.plugins)!
+    const second = find(definitions[1]!.plugins)!
+    assert.equal(first.name, 'dsh-compaction-session')
+    assert.deepEqual(first.config, supplied)
+    first.config.modelPolicies[0]!.model = 'changed'
+    assert.equal(second.config.modelPolicies[0]!.model, 'm')
+    assert.equal(supplied.modelPolicies[0]!.model, 'm')
+  } finally { await plugin.dispose() }
+})
+
 test('controller bridge restores inherited methods without leaving a shadow', () => {
   const prototype = { list(value: string) { return `local:${value}` } }
   const owner = Object.create(prototype)

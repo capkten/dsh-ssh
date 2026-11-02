@@ -1,18 +1,18 @@
 {
   "name": "dsh-ssh",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "SSH remote-execution plugin for DeepSeek Harness - ProxyJump chain, SFTP filesystem, subprocess and PTY over ssh2",
   "type": "module",
   "license": "MIT",
   "author": "yuunagi_cn <yuunagi.cn@outlook.com>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/UynajGI/dsh-ssh.git"
+    "url": "https://github.com/capkten/dsh-ssh.git"
   },
   "bugs": {
-    "url": "https://github.com/UynajGI/dsh-ssh/issues"
+    "url": "https://github.com/capkten/dsh-ssh/issues"
   },
-  "homepage": "https://github.com/UynajGI/dsh-ssh",
+  "homepage": "https://github.com/capkten/dsh-ssh",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "exports": {
@@ -90,7 +90,12 @@
   },
   "files": [
     "lib",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "INSTALL.md",
+    "UPSTREAM.md",
+    "RELEASE_NOTES.md"
   ],
   "sideEffects": false,
   "scripts": {
@@ -115,8 +120,8 @@
     "add-workspace"
   ],
   "engines": {
-    "node": ">=22.0.0",
-    "dsh": ">=0.2.0-rc.2 <0.3.0"
+    "node": ">=22.19.0",
+    "dsh": "=0.2.1-rc.5"
   },
   "dependencies": {
     "ssh2": "^1.16.0"
@@ -135,20 +140,6 @@
     "tsx": "^4.23.12",
     "typescript": "^6.0.0",
     "unrun": "^0.3.1",
-    "@deepseek-ai/cordis": "^4.0.5",
-    "@deepseek-ai/dsh-bash-local": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-fs": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-host-directory-picker": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-host-directory-picker-native": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-invariants": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-sandbox": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-shell": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-subprocess": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-timeout": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
-    "@deepseek-ai/schemastery": "^3.18.5"
-  },
-  "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.5",
     "@deepseek-ai/dsh-bash-local": "0.2.1-rc.2",
     "@deepseek-ai/dsh-fs": "0.2.1-rc.2",

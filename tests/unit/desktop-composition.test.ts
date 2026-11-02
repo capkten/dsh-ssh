@@ -4,11 +4,11 @@ import { test } from 'node:test'
 
 const manifest = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
 
-test('host SDKs are peers rather than private production dependencies', () => {
+test('host SDKs are development-only and cannot auto-install a second runtime core', () => {
   for (const name of ['@deepseek-ai/cordis', '@deepseek-ai/dsh-tools', '@deepseek-ai/dsh-fs', '@deepseek-ai/dsh-subprocess', '@deepseek-ai/dsh-shell']) {
     assert.equal(manifest.dependencies[name], undefined, name)
-    assert.ok(manifest.peerDependencies[name], name)
-    assert.equal(manifest.devDependencies[name], manifest.peerDependencies[name], name)
+    assert.ok(manifest.devDependencies[name], name)
+    assert.equal(manifest.peerDependencies?.[name], undefined, name)
   }
 })
 

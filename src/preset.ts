@@ -76,7 +76,7 @@ function routeOf(cwd: string | undefined): { id: string; path: string } | null {
  * @param connectionId - registry connection the realm is bound to.
  * @returns the preset plugin list.
  */
-function remotePresetPlugins(connectionId: string): unknown[] {
+function remotePresetPlugins(connectionId: string, compaction: PresetCompactionConfig): unknown[] {
   return [
     {
       id: 'persona',
@@ -136,7 +136,11 @@ function remotePresetPlugins(connectionId: string): unknown[] {
           group: true,
           isolate: { compaction: true, toolResultPruner: true },
           config: [
-            { id: 'compaction-basic', name: '@deepseek-ai/dsh-compaction-basic' },
+            {
+              id: 'compaction-basic',
+              name: compaction.compactionProvider ?? '@deepseek-ai/dsh-compaction-basic',
+              ...(compaction.compactionConfig === undefined ? {} : { config: structuredClone(compaction.compactionConfig) }),
+            },
             { id: 'command-compact', name: '@deepseek-ai/dsh-command-compact' },
             { id: 'tool-result-pruner', name: '@deepseek-ai/dsh-compaction-tool-result-pruner' },
           ],
@@ -169,22 +173,30 @@ function remotePresetPlugins(connectionId: string): unknown[] {
  * @param view - secret-free connection view.
  * @returns the preset definition.
  */
-function presetDefinition(view: SshConnectionView): PresetDefinition {
+function presetDefinition(view: SshConnectionView, compaction: PresetCompactionConfig): PresetDefinition {
   return {
     id: sshRemotePresetId(view.id),
     name: `${view.docker === undefined ? 'SSH' : 'Docker'} — ${view.label}`,
     description: `Remote workspace on ${view.username}@${view.host}:${view.port} over SSH (${view.id}).`,
     order: 90,
-    plugins: remotePresetPlugins(view.id),
+    plugins: remotePresetPlugins(view.id, compaction),
   }
 }
 
+/** Optional provider selection for every isolated remote compaction realm. */
+export interface PresetCompactionConfig {
+  /** Provider package; omitted values use the official compaction engine. */
+  compactionProvider?: string
+  /** Provider-owned settings copied into every isolated remote preset. */
+  compactionConfig?: Record<string, unknown>
+}
+
 /**
- * Mount the remote-preset controller: keep one preset per registry connection
- * and bind routed sessions to it before their first turn.
+ * Mount remote presets and bind routed sessions before their first turn.
  * @param ctx - mounting context.
+ * @param compaction - optional compaction provider and its configuration.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, compaction: PresetCompactionConfig = {}): void {
   ctx.inject(['agentPresets', 'sshRegistry', 'agents'], (child) => {
     const presets = child.agentPresets
     const registry = child.sshRegistry as SshRegistry
@@ -206,7 +218,7 @@ export function apply(ctx: Context): void {
       }
       const view = viewOf(connectionId)
       if (view === undefined) throw new Error(`dsh-ssh: cannot create a remote preset for unknown connection "${connectionId}"`)
-      const registration = presets.register(presetDefinition(view)).then((dispose) => {
+      const registration = presets.register(presetDefinition(view, compaction)).then((dispose) => {
         if (disposed) {
           void dispose()
         } else {

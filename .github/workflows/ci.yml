@@ -15,10 +15,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '22.19.0'
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run typecheck
+      - run: npm test
 
   pack:
     name: publishable payload
@@ -28,12 +29,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '22.19.0'
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run build
       - name: Verify the publishable tarball carries the compiled lib tree
         run: |
-          # npm notice lines go to stderr; keep both streams for the grep.
-          npm pack --dry-run 2>&1 | grep -q 'lib/index.js' \
-            || { echo 'lib tree missing from the publishable payload'; exit 1; }
+          npm pack --ignore-scripts
+          node scripts/check-package.mjs dsh-ssh-*.tgz

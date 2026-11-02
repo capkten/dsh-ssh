@@ -2,6 +2,10 @@
 
 [English](README.md) | 中文
 
+**本 fork 发布：**[下载安装包](https://github.com/capkten/dsh-ssh/releases)，
+按 [INSTALL.md](INSTALL.md) 安装。0.4.3 为针对 Desktop 0.2.1-rc.5 的预发布。
+裸 npm 包名仍指向上游，不会选中本 fork。原作者和 MIT 许可保留，见 [UPSTREAM.md](UPSTREAM.md)。
+
 <p align="center">
   <img src="https://img.shields.io/npm/v/dsh-ssh" alt="npm 版本">
   <img src="https://img.shields.io/npm/l/dsh-ssh" alt="许可证">
@@ -16,7 +20,7 @@ SSH 连接在该主机上执行；本地工作区保持原有工具不变。基�
 
 ![通过 SSH 添加工作区](docs/images/add-workspace.png)
 
-## 实现方式（DSH 0.2.1-rc.2）
+## 实现方式
 
 DSH 通过 **agent preset（Agent 预设）** 挂载模型工具，而自带预设解析的是 **宿主机** 的
 `fs` / `subprocess` / `shell` 服务。因此 dsh-ssh：
@@ -33,18 +37,14 @@ DSH 通过 **agent preset（Agent 预设）** 挂载模型工具，而自带预�
 
 ## 安装
 
-```sh
-dsh plugin --profile desktop add dsh-ssh
-```
-
-或 Web 界面：**插件 → 添加插件 → `dsh-ssh`**。需要 DeepSeek Harness 0.2.x 与 Node ≥ 22。
-普通 `npm i dsh-ssh` 不会选中 bundle；需自行加入 `dsh.profile.bundles`。
+下载 GitHub Release 的 `.tgz`，按 [INSTALL.md](INSTALL.md) 合并 Profile 依赖和 bundle。
+需要 Desktop 0.2.1-rc.5 与 Node ≥22.19.0。源码 ZIP 不能代替插件安装包。
 
 ## 安全
 
 - 主机指纹校验：注册表连接支持 `strictHostKeyChecking` 与 `knownHosts`（`SHA256:…` 指纹或原始
   base64 公钥）。`strictHostKeyChecking: true` 且未显式给出 `knownHosts` 时，会读取
-  `~/.ssh/known_hosts` 中匹配该主机的条目。默认仍为 `false` 以兼容已有连接——新部署建议开启。
+  `~/.ssh/known_hosts` 中匹配该主机的条目。默认启用严格校验，不要通过关闭校验绕过未知主机。
 - 连接密码/口令按原文保存在 `<dsh home>/dsh-ssh-connections.json`，请像保护 `~/.ssh` 一样保护它。
 - 远程命令以 SSH 登录用户身份运行，**没有远程内核沙箱**：只有文件修改被远程工作区根目录围栏
   （read-only / workspace-write）约束，并沿用宿主审批流程。请把远程工作区视为对该主机的完整 shell 权限。
@@ -52,8 +52,9 @@ dsh plugin --profile desktop add dsh-ssh
 
 ## 已知限制（如实列出）
 
-- **Web 侧栏文件树 / 文件预览 / “Open in app”** 以及 **Web 侧栏终端** 在 DSH 0.2.1 中读取的是
-  *宿主机* 的 `fs` / `subprocess` 服务，因此对远程工作区仍为本地行为；模型可用的终端工具是远程的。
+- 本 fork 对官方 `workspaceFiles` 的文件列表/预览接口提供远程桥接；绕过该接口的第三方侧栏
+  可能不兼容。本次发布尚未完成完整 Desktop UI 验收，模型工具测试不代表侧栏通过。
+  模型可用的终端工具在远端执行。
 - **变更文件（git）卡片**（`dsh-workspace-changes`）把本地临时文件与远程 git 路径混用，对远程工作区
   没有意义。通过 Bash 工具执行 `git` 则是远程的，正常工作。
 - 不支持 LSP（旧 README 中的说法只是愿景）。
@@ -99,4 +100,10 @@ SSH 默认校验主机密钥；未知主机应先通过可信渠道确认密钥�
 PTY、延时进程、重连和连接销毁后的失败。只写独立 `/tmp/dsh-ssh-test-<UUID>` 目录。
 这是 Provider 证据；不代表 Desktop 侧栏终端、文件树或变更卡片已具备远程路由。
 SSH Shell 没有远端内核沙箱；文件路径策略不等于完整隔离。
-详见 `docs/desktop-integration-20261023.md`。
+当前安装与验证步骤详见 [INSTALL.md](INSTALL.md)。私人环境调查日志不随本仓库发布。
+
+## Docker exec 与可选压缩
+
+连接 SSH 宿主后选择运行中的 Linux 容器及其目录，不需要容器 sshd/22 端口。
+宿主需要 Docker 权限，容器需要 shell 和文件/搜索工具，不保证支持极简镜像。
+可通过 `compactionProvider` 接入独立的 dsh-compaction-session，见安装说明。

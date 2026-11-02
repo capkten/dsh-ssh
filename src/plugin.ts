@@ -23,6 +23,10 @@ import { apply as applyDesktop } from './desktop.ts'
 
 /** Aggregate config: optional legacy host-wide connection plus preset control. */
 export interface Config {
+  /** Optional compaction provider package for each isolated remote preset. */
+  compactionProvider?: string
+  /** Configuration passed to the selected remote compaction provider. */
+  compactionConfig?: Record<string, unknown>
   /** Legacy host-wide target hostname. Omit for the preset-only composition. */
   host?: string
   /** Legacy host-wide SSH port. */
@@ -55,6 +59,8 @@ export interface Config {
 
 /** Schemastery schema for the aggregate row (all legacy fields optional). */
 export const Config: z<Config> = z.object({
+  compactionProvider: z.string(),
+  compactionConfig: z.dict(z.any()),
   host: z.string(),
   port: z.number(),
   username: z.string(),
@@ -84,6 +90,6 @@ export function apply(ctx: Context, config: Config = {}): void {
     ctx.plugin(SshRuntime, config as SshConfig)
   }
   applyContext(ctx)
-  applyPresets(ctx)
+  applyPresets(ctx, config)
   applyDesktop(ctx)
 }

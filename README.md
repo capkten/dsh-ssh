@@ -3,8 +3,8 @@
 English | [中文](README.zh.md)
 
 **Fork release:** [Download compiled packages](https://github.com/capkten/dsh-ssh/releases)
-and follow [INSTALL.md](INSTALL.md). Version 0.4.3 is a prerelease for Desktop
-0.2.1-rc.5. The bare npm name belongs to upstream and does not select this fork.
+and follow [INSTALL.md](INSTALL.md). Version 0.4.4 is a prerelease for Desktop
+0.2.2-rc.1. The bare npm name belongs to upstream and does not select this fork.
 See [UPSTREAM.md](UPSTREAM.md) for attribution and host SDK policy.
 
 <p align="center">
@@ -44,7 +44,7 @@ never see the remote providers.
 ## Install
 
 Use the versioned GitHub Release `.tgz` and the Profile dependency/bundle steps in
-[INSTALL.md](INSTALL.md). Needs Desktop 0.2.1-rc.5 and Node ≥22.19.0.
+[INSTALL.md](INSTALL.md). Needs Desktop 0.2.2-rc.1 and Node ≥22.19.0.
 The automatically generated source ZIP is not the installation package.
 
 ## Security

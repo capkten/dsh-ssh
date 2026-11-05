@@ -152,7 +152,7 @@ function remotePresetPlugins(connectionId: string, compaction: PresetCompactionC
           isolate: { workflowEngine: true },
           config: [
             { id: 'tool-subagent-control', name: '@deepseek-ai/dsh-tool-subagent-control' },
-            { id: 'tool-subagent-list-agents', name: '@deepseek-ai/dsh-tool-subagent-control/list-agents' },
+            // DSH 0.2.2 integrates list_agents into the control plugin; the old subpath is no longer exported.
             { id: 'tool-subagent', name: '@deepseek-ai/dsh-tool-subagent', config: { provider: 'spawn', toolName: 'subagent' } },
             { id: 'tool-subagent-fork', name: '@deepseek-ai/dsh-tool-subagent', config: { provider: 'fork', toolName: 'subagent_fork' } },
             { id: 'workflow-ptc', name: '@deepseek-ai/dsh-workflow-ptc', config: { provider: 'spawn' } },

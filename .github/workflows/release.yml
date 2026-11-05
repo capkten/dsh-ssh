@@ -32,4 +32,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$RELEASE_TAG" dsh-ssh-*.tgz SHA256SUMS.txt --verify-tag --prerelease --title "$RELEASE_TAG — SSH / Docker for DSH rc.5" --notes-file RELEASE_NOTES.md
+          gh release create "$RELEASE_TAG" dsh-ssh-*.tgz SHA256SUMS.txt --verify-tag --prerelease --title "$RELEASE_TAG — SSH / Docker for DSH 0.2.2-rc.1" --notes-file RELEASE_NOTES.md

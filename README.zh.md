@@ -3,7 +3,7 @@
 [English](README.md) | 中文
 
 **本 fork 发布：**[下载安装包](https://github.com/capkten/dsh-ssh/releases)，
-按 [INSTALL.md](INSTALL.md) 安装。0.4.3 为针对 Desktop 0.2.1-rc.5 的预发布。
+按 [INSTALL.md](INSTALL.md) 安装。0.4.4 为针对 Desktop 0.2.2-rc.1 的预发布。
 裸 npm 包名仍指向上游，不会选中本 fork。原作者和 MIT 许可保留，见 [UPSTREAM.md](UPSTREAM.md)。
 
 <p align="center">
@@ -38,7 +38,7 @@ DSH 通过 **agent preset（Agent 预设）** 挂载模型工具，而自带预�
 ## 安装
 
 下载 GitHub Release 的 `.tgz`，按 [INSTALL.md](INSTALL.md) 合并 Profile 依赖和 bundle。
-需要 Desktop 0.2.1-rc.5 与 Node ≥22.19.0。源码 ZIP 不能代替插件安装包。
+需要 Desktop 0.2.2-rc.1 与 Node ≥22.19.0。源码 ZIP 不能代替插件安装包。
 
 ## 安全
 

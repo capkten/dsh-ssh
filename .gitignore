@@ -13,3 +13,6 @@ tests/_deps/node_modules
 # Qwen Code CI settings and logs
 .qwen/
 qwen-artifacts/
+
+tests/support/.current-sdk-path
+SHA256SUMS.txt

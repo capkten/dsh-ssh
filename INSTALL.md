@@ -1,12 +1,12 @@
 # 安装本 fork 的 SSH / Docker 插件
 
 本仓库发布的是独立 fork，不是 npm 上的上游 `dsh-ssh`。
-**0.4.3 预发布针对 Windows DSH Desktop 0.2.1-rc.5**；其他版本需重新验证，
+**0.4.4 预发布针对 Windows DSH Desktop 0.2.2-rc.1**；其他版本需重新验证，
 不要绕过版本检查。安装包是插件 `.tgz`，不是 Desktop 的 EXE 安装程序。
 
 ## 下载并安装
 
-1. 从 https://github.com/capkten/dsh-ssh/releases 下载 `dsh-ssh-0.4.3.tgz`
+1. 从 https://github.com/capkten/dsh-ssh/releases 下载 `dsh-ssh-0.4.4.tgz`
    和 `SHA256SUMS.txt`。GitHub 自动生成的源码 ZIP 不包含构建产物，不能代替安装包。
 2. 完全退出 DSH（包括托盘），先备份 `%USERPROFILE%\.dsh\profiles\desktop`
    的 `package.json`、`cordis.patch.yml`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`。
@@ -19,7 +19,7 @@
 ```json
 {
   "dependencies": {
-    "dsh-ssh": "file:C:/Users/YOUR_NAME/.dsh/deploy/dsh-ssh-0.4.3.tgz"
+    "dsh-ssh": "file:C:/Users/YOUR_NAME/.dsh/deploy/dsh-ssh-0.4.4.tgz"
   },
   "dsh": {
     "profile": {

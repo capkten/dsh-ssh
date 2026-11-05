@@ -1,0 +1,243 @@
+{
+  "@deepseek-ai/dsh-persona": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-agent-instructions": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-time-context": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-terminal": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-terminal-bash": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-tool-terminal": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./locale/*.json",
+      "./package.json"
+    ]
+  },
+  "@deepseek-ai/dsh-tool-bash": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-tool-fs": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-tool-jobs": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-tool-schedule": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./locale/*.json",
+      "./package.json"
+    ]
+  },
+  "@deepseek-ai/dsh-skill-filesystem": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-tool-skill": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-command-goal": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-tool-goal": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-plan-mode": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./types",
+      "./client",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-command-compact": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-compaction-tool-result-pruner": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-tool-subagent-control": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-tool-subagent": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./model-selection-settings",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json",
+      "./model-selection-settings/locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-workflow-ptc": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-tool-workflow": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./types",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-tool-ask-user": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-tool-todo": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./client",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-tool-web": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-tool-present": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./types",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  },
+  "@deepseek-ai/dsh-compaction-basic": {
+    "version": "0.2.2-rc.1",
+    "exports": [
+      ".",
+      "./src/*",
+      "./package.json",
+      "./locale/*.json"
+    ]
+  }
+}

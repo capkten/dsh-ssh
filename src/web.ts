@@ -1,3 +1,4 @@
+import { hostKeyStore, HostKeyTrustError } from './hostkeys.ts'
 /**
  * Web-facing RPC channel of dsh-ssh: mounts the connection registry and
  * registers the `/dsh-ssh` unary channel on the shared web transport with the
@@ -194,7 +195,8 @@ export function apply(ctx: Context, config: WebChannelConfig): void {
       const environment = await connection.getRemoteEnvironment(signal)
       const home = environment.HOME
       if (isString(home) && home.trim() !== '') return home
-    } catch {
+    } catch (error) {
+      if (error instanceof HostKeyTrustError) throw error
       // A dead connection falls back below; the listing itself still surfaces it.
     }
     return connection.spec.cwd ?? '/root'
@@ -278,6 +280,7 @@ export function apply(ctx: Context, config: WebChannelConfig): void {
       console.log(`[dsh-ssh] ${endpoint} -> ${result.ok ? 'ok' : `err ${result.error.code}`} in ${Date.now() - startedAt}ms`)
       return result
     } catch (error) {
+      if (error instanceof HostKeyTrustError) return { ok: true, value: { hostKeyRequired: error.challenge } }
       const message = messageOf(error)
       console.log(`[dsh-ssh] ${endpoint} -> throw in ${Date.now() - startedAt}ms: ${message}`)
       const code = message.startsWith('bad-request:') ? 'bad-request' : 'connection-failed'
@@ -287,6 +290,11 @@ export function apply(ctx: Context, config: WebChannelConfig): void {
 
   const dispatchInner = async (endpoint: string, payload: unknown, signal: AbortSignal): Promise<ChannelResult> => {
     switch (endpoint) {
+        case 'hostkeys.trust': {
+          if (!isRecord(payload) || !isString(payload.id) || !isString(payload.fingerprint)) throw new Error('bad-request: invalid host-key confirmation')
+          hostKeyStore.trust(payload.id, payload.fingerprint)
+          return { ok: true, value: { trusted: true } }
+        }
         case 'connections.list': return { ok: true, value: registry().list() }
         case 'config.hosts': {
           // Re-reads ~/.ssh/config on every call; wildcards stay hidden.

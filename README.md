@@ -128,3 +128,9 @@ Connect to the SSH host, then choose a running Linux container and its workspace
 directory. No container sshd/port 22 is required. The host needs Docker CLI/daemon
 access and the container needs the required shell and file/search tools; minimal
 distroless/scratch images are not generally supported. See INSTALL.md for checks.
+
+## First-use host trust (0.4.5 candidate)
+
+The add-workspace flow and connection test display unknown SSH host keys with host, port, key type, and SHA256 fingerprint. After out-of-band verification, explicit approval appends the observed key to `~/.ssh/known_hosts` and retries the handshake. Canceling writes nothing and sends no login authentication. ProxyJump hops are verified separately; Docker workspaces verify their SSH host.
+
+Changed/revoked keys are blocked without an overwrite button. OpenSSH hashed host entries are supported and ports remain separate identities. Confirmation tokens bind to an observed key and expire after ten minutes. Trust-file failures do not disable verification. Existing background sessions fail closed and require returning to the workspace connection flow for a new trust decision.

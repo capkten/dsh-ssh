@@ -1,6 +1,6 @@
 {
   "name": "dsh-ssh",
-  "version": "0.4.4",
+  "version": "0.4.5-hostkey.1",
   "description": "SSH remote-execution plugin for DeepSeek Harness - ProxyJump chain, SFTP filesystem, subprocess and PTY over ssh2",
   "type": "module",
   "license": "MIT",
@@ -129,17 +129,6 @@
   "devDependencies": {
     "@commitlint/cli": "^19.0.0",
     "@commitlint/config-conventional": "^19.0.0",
-    "@types/node": "^22.0.0",
-    "@types/react": "^18.3.1",
-    "@types/ssh2": "^1.15.5",
-    "commit-and-tag-version": "^13.1.2",
-    "husky": "^9.0.0",
-    "lightningcss": "^1.32.0",
-    "react": "^18.3.1",
-    "tsdown": "^0.22.2",
-    "tsx": "^4.23.12",
-    "typescript": "^6.0.0",
-    "unrun": "^0.3.1",
     "@deepseek-ai/cordis": "^4.0.5",
     "@deepseek-ai/dsh-bash-local": "0.2.1-rc.2",
     "@deepseek-ai/dsh-fs": "0.2.1-rc.2",
@@ -151,6 +140,18 @@
     "@deepseek-ai/dsh-subprocess": "0.2.1-rc.2",
     "@deepseek-ai/dsh-timeout": "0.2.1-rc.2",
     "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
-    "@deepseek-ai/schemastery": "^3.18.5"
+    "@deepseek-ai/schemastery": "^3.18.5",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.1",
+    "@types/ssh2": "^1.15.5",
+    "commit-and-tag-version": "^13.1.2",
+    "husky": "^9.0.0",
+    "lightningcss": "^1.32.0",
+    "react": "^18.3.1",
+    "react-test-renderer": "^18.3.1",
+    "tsdown": "^0.22.2",
+    "tsx": "^4.23.12",
+    "typescript": "^6.0.0",
+    "unrun": "^0.3.1"
   }
 }

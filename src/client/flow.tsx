@@ -1,3 +1,4 @@
+import { useHostKeyTrust } from './hostkey.tsx'
 /**
  * The add-workspace directory flow of dsh-ssh, laid out as a connection
  * sidebar beside a directory browser (VS Code Remote Explorer style): the
@@ -303,8 +304,9 @@ function describeRemoteFailure(raw: string): RemoteFailure {
 
 /** The directory-flow occupant registered into both workspace holes. */
 export function SshWorkspaceFlow(props: FlowProps & FlowInjected) {
-  const { open, busy, onPicked, onCancel, listLocalDirectory, createLocalDirectory, rpc, connection, subscribeConnectionReset } = props
+  const { open, busy, onPicked, onCancel, listLocalDirectory, createLocalDirectory, rpc: rawRpc, connection, subscribeConnectionReset } = props
 
+  const { rpc, dialog: hostKeyDialog } = useHostKeyTrust(rawRpc, open)
   const connectionUi = useConnectionUi(connection, subscribeConnectionReset)
 
   const [mode, setMode] = useState<Mode>({ kind: 'local' })
@@ -1370,6 +1372,7 @@ export function SshWorkspaceFlow(props: FlowProps & FlowInjected) {
           onSaved={(view) => { void formSaved(view) }}
         />
       )}
+      {hostKeyDialog}
     </div>
   )
 }

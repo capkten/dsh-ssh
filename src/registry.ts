@@ -1,3 +1,4 @@
+import { HostKeyTrustError } from './hostkeys.ts'
 /**
  * Connection registry for the web channel: persisted multi-connection state
  * plus `~/.ssh/config` awareness. The `ssh://<id>/<path>` routing used by the
@@ -379,6 +380,7 @@ export class SshRegistry extends Service {
       if (outcome.exitCode !== 0) throw new Error(outcome.stderr.trim() || `remote command failed with exit code ${String(outcome.exitCode)}`)
       return { ok: true }
     } catch (error) {
+      if (error instanceof HostKeyTrustError) throw error
       return { ok: false, message: error instanceof Error ? error.message : String(error) }
     } finally {
       connection.dispose()

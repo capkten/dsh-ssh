@@ -8,13 +8,13 @@
  * @module dsh-ssh/connection
  */
 
-import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, posix } from 'node:path'
 import { Client } from 'ssh2'
 import type { ClientChannel, ConnectConfig, SFTPWrapper } from 'ssh2'
-import { wrapCwd, defaultIdentity, knownHostsFor, quoteShellArg } from './runtime.ts'
+import { hostKeyStore, HostKeyStore } from './hostkeys.ts'
+import { wrapCwd, defaultIdentity, quoteShellArg } from './runtime.ts'
 import type { ExecOutcome, JumpConfig } from './runtime.ts'
 import { sshDebug } from './debug.ts'
 import { dockerClient, dockerCommand, hostExec, validateDockerTarget } from './docker.ts'
@@ -138,18 +138,6 @@ function forwardThrough(client: Client, host: string, port: number): Promise<Cli
   })
 }
 
-/** Host-key verifier accepting exactly the configured fingerprints/keys. */
-function hostVerifierFor(knownHosts: readonly string[]): (key: Buffer) => boolean {
-  return (key: Buffer): boolean => {
-    const fingerprint = `SHA256:${createHash('sha256').update(key).digest('base64')}`
-    const raw = key.toString('base64')
-    return knownHosts.some((entry) => {
-      const token = entry.trim().split(/\s+/).at(-1) ?? ''
-      return token.replace(/=+$/, '') === fingerprint.replace(/=+$/, '') || token === raw
-    })
-  }
-}
-
 /** A registry-owned live SSH connection (jump chain + shared SFTP). */
 export class SshConnection {
   readonly id: string
@@ -172,14 +160,14 @@ export class SshConnection {
   }
 
   /** Build the hop chain from a registry spec (auth defaults fall down the chain). */
-  constructor(readonly spec: SshConnectionSpec) {
+  constructor(readonly spec: SshConnectionSpec, private readonly trustStore: HostKeyStore = hostKeyStore) {
     if (spec.docker !== undefined) validateDockerTarget(spec.docker)
     this.id = spec.id
     this.label = spec.label
     this.endpoint = `${spec.username}@${spec.host}${spec.docker === undefined ? '' : ` [docker:${spec.docker.container}]`}`
     this.strict = spec.strictHostKeyChecking ?? true
     const configuredHosts = spec.knownHosts ?? []
-    this.knownHosts = configuredHosts.length > 0 ? configuredHosts : (this.strict ? knownHostsFor(spec.host, spec.port) : [])
+    this.knownHosts = configuredHosts
     // Tailscale/DERP-relayed paths routinely exceed 20s to ready (observed
     // 4–20s variance); OpenSSH has no client-side handshake cap at all.
     const readyTimeout = spec.readyTimeout ?? 45_000
@@ -301,7 +289,13 @@ export class SshConnection {
     }
     if (this.sftp !== undefined) return this.sftp
     this.sftpOpening ??= this.openSftp(signal)
-    const sftp = await this.sftpOpening
+    const opening = this.sftpOpening
+    let sftp: SFTPWrapper
+    try { sftp = await opening }
+    catch (error) {
+      if (this.sftpOpening === opening) this.sftpOpening = undefined
+      throw error
+    }
     if (this.sftp === undefined) this.sftp = sftp
     return sftp
   }
@@ -309,7 +303,13 @@ export class SshConnection {
   /** The remote login environment, read once and cached. */
   getRemoteEnvironment(signal?: AbortSignal): Promise<Record<string, string>> {
     if (this.disposed) return Promise.reject(new Error(`dsh-ssh: connection "${this.label}" is disposed`))
-    this.remoteEnvironment ??= this.readRemoteEnvironment(signal)
+    if (this.remoteEnvironment === undefined) {
+      const reading = this.readRemoteEnvironment(signal).catch((error: unknown) => {
+        if (this.remoteEnvironment === reading) this.remoteEnvironment = undefined
+        throw error
+      })
+      this.remoteEnvironment = reading
+    }
     return this.remoteEnvironment
   }
 
@@ -392,13 +392,23 @@ export class SshConnection {
         clients.push(client)
         this.watchClient(client)
         const config = toConnectConfig(hop, undefined)
-        if (this.strict) config.hostVerifier = hostVerifierFor(index === this.hops.length - 1 ? this.knownHosts : knownHostsFor(hop.host, hop.port))
-        if (previous === undefined) {
-          await connectReady(client, config)
-        } else {
-          const socket = await forwardThrough(previous, hop.host, hop.port)
-          await connectReady(client, { ...config, sock: socket })
+        let trustError: Error | undefined
+        if (this.strict) config.hostVerifier = (key: Buffer): boolean => {
+          try {
+            trustError = this.trustStore.verify(hop.host, hop.port, key, index === this.hops.length - 1 ? this.knownHosts : [])
+          } catch (error) {
+            trustError = new Error('dsh-ssh: 无法读取可信主机密钥记录，连接已阻止', { cause: error })
+          }
+          return trustError === undefined
         }
+        try {
+          if (previous === undefined) {
+            await connectReady(client, config)
+          } else {
+            const socket = await forwardThrough(previous, hop.host, hop.port)
+            await connectReady(client, { ...config, sock: socket })
+          }
+        } catch (error) { throw trustError ?? error }
       }
       this.clients = clients
       return clients[clients.length - 1] as Client

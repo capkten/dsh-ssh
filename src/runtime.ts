@@ -1,3 +1,4 @@
+import { hostKeyStore } from './hostkeys.ts'
 /**
  * Shared ownership of one SSH execution world. Capability adapters await the same
  * authenticated connection (reached through an optional ProxyJump chain), so
@@ -176,32 +177,15 @@ const DEFAULT_IDENTITY_FILES = ['.ssh/id_ed25519', '.ssh/id_ecdsa', '.ssh/id_rsa
 
 /**
  * Read trusted host keys for one target from `~/.ssh/known_hosts`. Plain host
- * names and `[host]:port` spellings are matched; hashed entries are skipped
- * (ssh2 would need the hash algorithm, and OpenSSH's own file is authoritative
- * on the host). Returns raw base64 key tokens for the verifier.
+ * names, `[host]:port` and OpenSSH SHA1-hashed host names are matched.
+ * Returns raw base64 key tokens for the verifier.
  * @param host - target hostname or address.
  * @param port - target SSH port.
  * @returns trusted key tokens, or an empty array when the file has no entry.
  */
 export function knownHostsFor(host: string, port: number): string[] {
-  try {
-    const path = join(homedir(), '.ssh', 'known_hosts')
-    if (!existsSync(path)) return []
-    const tokens: string[] = []
-    for (const rawLine of readFileSync(path, 'utf8').split(/\r?\n/)) {
-      const line = rawLine.trim()
-      if (line.length === 0 || line.startsWith('#')) continue
-      const fields = line.split(/\s+/)
-      const names = fields[0]
-      const token = fields[2]
-      if (names === undefined || token === undefined) continue
-      const matches = names.split(',').some(name => name === host || name === `[${host}]:${port}`)
-      if (matches) tokens.push(token)
-    }
-    return tokens
-  } catch {
-    return []
-  }
+  const records = hostKeyStore.keys(host, port)
+  return records.trusted.filter(key => !records.revoked.includes(key))
 }
 
 /**
